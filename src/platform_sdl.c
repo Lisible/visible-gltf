@@ -1,6 +1,7 @@
 #include "log.h"
 #include "platform.h"
 #include "platform_sdl.h"
+#include <SDL3/SDL_vulkan.h>
 
 bool vgltf_platform_init(struct vgltf_platform *platform) {
   if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -110,4 +111,20 @@ bool vgltf_platform_poll_event(struct vgltf_platform *platform,
     }
   }
   return pending_events;
+}
+bool vgltf_platform_get_window_size(struct vgltf_platform *platform,
+                                    struct vgltf_window_size *window_size) {
+  return SDL_GetWindowSize(platform->window, &window_size->width,
+                           &window_size->height);
+}
+char const *const *
+vgltf_platform_get_vulkan_instance_extensions(struct vgltf_platform *platform,
+                                              uint32_t *count) {
+  (void)platform;
+  return SDL_Vulkan_GetInstanceExtensions(count);
+}
+bool vgltf_platform_create_vulkan_surface(struct vgltf_platform *platform,
+                                          VkInstance instance,
+                                          VkSurfaceKHR *surface) {
+  return SDL_Vulkan_CreateSurface(platform->window, instance, nullptr, surface);
 }
