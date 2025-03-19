@@ -19,6 +19,9 @@ struct vgltf_renderer {
   VkFormat swapchain_image_format;
   VkExtent2D swapchain_extent;
   uint32_t swapchain_image_count;
+  VkRenderPass render_pass;
+  VkPipelineLayout pipeline_layout;
+  VkPipeline graphics_pipeline;
 };
 bool vgltf_renderer_init(struct vgltf_renderer *renderer,
                          struct vgltf_platform *platform);
