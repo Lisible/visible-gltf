@@ -22,6 +22,10 @@ struct vgltf_renderer {
   VkRenderPass render_pass;
   VkPipelineLayout pipeline_layout;
   VkPipeline graphics_pipeline;
+  VkFramebuffer
+      swapchain_framebuffers[VGLTF_RENDERER_MAX_SWAPCHAIN_IMAGE_COUNT];
+  VkCommandPool command_pool;
+  VkCommandBuffer command_buffer;
 };
 bool vgltf_renderer_init(struct vgltf_renderer *renderer,
                          struct vgltf_platform *platform);

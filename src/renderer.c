@@ -1053,8 +1053,83 @@ err:
   return false;
 }
 
-bool vgltf_renderer_init(struct vgltf_renderer *renderer,
-                         struct vgltf_platform *platform) {
+static bool
+vgltf_renderer_create_framebuffers(struct vgltf_renderer *renderer) {
+  for (uint32_t i = 0; i < renderer->swapchain_image_count; i++) {
+    VkImageView attachments[] = {renderer->swapchain_image_views[i]};
+
+    VkFramebufferCreateInfo framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = renderer->render_pass,
+        .attachmentCount = 1,
+        .pAttachments = attachments,
+        .width = renderer->swapchain_extent.width,
+        .height = renderer->swapchain_extent.height,
+        .layers = 1};
+
+    if (vkCreateFramebuffer(renderer->device, &framebuffer_info, nullptr,
+                            &renderer->swapchain_framebuffers[i]) !=
+        VK_SUCCESS) {
+      VGLTF_LOG_ERR("Failed to create framebuffer");
+      goto err;
+    }
+  }
+
+  return true;
+err:
+  return false;
+}
+
+static bool
+vgltf_renderer_create_command_pool(struct vgltf_renderer *renderer) {
+  struct queue_family_indices queue_family_indices = {};
+  if (!queue_family_indices_for_device(&queue_family_indices,
+                                       renderer->physical_device,
+                                       renderer->surface)) {
+    VGLTF_LOG_ERR("Couldn't fetch queue family indices");
+    goto err;
+  }
+
+  VkCommandPoolCreateInfo pool_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+      .queueFamilyIndex = queue_family_indices.graphics_family};
+
+  if (vkCreateCommandPool(renderer->device, &pool_info, nullptr,
+                          &renderer->command_pool) != VK_SUCCESS) {
+    VGLTF_LOG_ERR("Couldn't create command pool");
+    goto err;
+  }
+
+  return true;
+err:
+  return false;
+}
+
+static bool
+vgltf_renderer_create_command_buffer(struct vgltf_renderer *renderer) {
+  VkCommandBufferAllocateInfo allocate_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = renderer->command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 1};
+
+  if (vkAllocateCommandBuffers(renderer->device, &allocate_info,
+                               &renderer->command_buffer) != VK_SUCCESS) {
+    VGLTF_LOG_ERR("Couldn't allocate command buffer");
+    goto err;
+  }
+
+  return true;
+err:
+  return false;
+}
+
+static bool vgltf_renderer_record_command_buffer
+
+    bool
+    vgltf_renderer_init(struct vgltf_renderer *renderer,
+                        struct vgltf_platform *platform) {
   if (!vgltf_renderer_create_instance(renderer, platform)) {
     VGLTF_LOG_ERR("instance creation failed");
     goto err;
@@ -1100,7 +1175,36 @@ bool vgltf_renderer_init(struct vgltf_renderer *renderer,
     goto destroy_render_pass;
   }
 
+  if (!vgltf_renderer_create_framebuffers(renderer)) {
+    VGLTF_LOG_ERR("Couldn't create framebuffers");
+    goto destroy_graphics_pipeline;
+  }
+
+  if (!vgltf_renderer_create_command_pool(renderer)) {
+    VGLTF_LOG_ERR("Couldn't create command pool");
+    goto destroy_frame_buffers;
+  }
+
+  if (!vgltf_renderer_create_command_buffer(renderer)) {
+    VGLTF_LOG_ERR("Couldn't create command buffer");
+    goto destroy_command_pool;
+  }
+
   return true;
+
+destroy_command_pool:
+  vkDestroyCommandPool(renderer->device, renderer->command_pool, nullptr);
+destroy_frame_buffers:
+  for (uint32_t swapchain_framebuffer_index = 0;
+       swapchain_framebuffer_index < renderer->swapchain_image_count;
+       swapchain_framebuffer_index++) {
+    vkDestroyFramebuffer(
+        renderer->device,
+        renderer->swapchain_framebuffers[swapchain_framebuffer_index], nullptr);
+  }
+destroy_graphics_pipeline:
+  vkDestroyPipeline(renderer->device, renderer->graphics_pipeline, nullptr);
+  vkDestroyPipelineLayout(renderer->device, renderer->pipeline_layout, nullptr);
 destroy_render_pass:
   vkDestroyRenderPass(renderer->device, renderer->render_pass, nullptr);
 destroy_image_views:
@@ -1127,6 +1231,14 @@ err:
   return false;
 }
 void vgltf_renderer_deinit(struct vgltf_renderer *renderer) {
+  vkDestroyCommandPool(renderer->device, renderer->command_pool, nullptr);
+  for (uint32_t swapchain_framebuffer_index = 0;
+       swapchain_framebuffer_index < renderer->swapchain_image_count;
+       swapchain_framebuffer_index++) {
+    vkDestroyFramebuffer(
+        renderer->device,
+        renderer->swapchain_framebuffers[swapchain_framebuffer_index], nullptr);
+  }
   vkDestroyPipeline(renderer->device, renderer->graphics_pipeline, nullptr);
   vkDestroyPipelineLayout(renderer->device, renderer->pipeline_layout, nullptr);
   vkDestroyRenderPass(renderer->device, renderer->render_pass, nullptr);
