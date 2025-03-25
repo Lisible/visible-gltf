@@ -734,9 +734,7 @@ choose_swapchain_extent(const VkSurfaceCapabilitiesKHR *capabilities, int width,
   }
 }
 
-static bool vgltf_renderer_create_swapchain(struct vgltf_renderer *renderer,
-                                            int window_width_px,
-                                            int window_height_px) {
+static bool vgltf_renderer_create_swapchain(struct vgltf_renderer *renderer) {
   struct swapchain_support_details swapchain_support_details = {};
   swapchain_support_details_query_from_device(
       &swapchain_support_details, renderer->physical_device, renderer->surface);
@@ -748,9 +746,9 @@ static bool vgltf_renderer_create_swapchain(struct vgltf_renderer *renderer,
       swapchain_support_details.present_modes,
       swapchain_support_details.present_mode_count);
 
-  VkExtent2D extent =
-      choose_swapchain_extent(&swapchain_support_details.capabilities,
-                              window_width_px, window_height_px);
+  VkExtent2D extent = choose_swapchain_extent(
+      &swapchain_support_details.capabilities, renderer->window_size.width,
+      renderer->window_size.height);
   uint32_t image_count =
       swapchain_support_details.capabilities.minImageCount + 1;
   if (swapchain_support_details.capabilities.maxImageCount > 0 &&
@@ -1181,18 +1179,59 @@ err:
   return false;
 }
 
+static void vgltf_renderer_cleanup_swapchain(struct vgltf_renderer *renderer) {
+  for (uint32_t framebuffer_index = 0;
+       framebuffer_index < renderer->swapchain_image_count;
+       framebuffer_index++) {
+    vkDestroyFramebuffer(renderer->device,
+                         renderer->swapchain_framebuffers[framebuffer_index],
+                         nullptr);
+  }
+
+  for (uint32_t image_view_index = 0;
+       image_view_index < renderer->swapchain_image_count; image_view_index++) {
+    vkDestroyImageView(renderer->device,
+                       renderer->swapchain_image_views[image_view_index],
+                       nullptr);
+  }
+
+  vkDestroySwapchainKHR(renderer->device, renderer->swapchain, nullptr);
+}
+
+static bool vgltf_renderer_recreate_swapchain(struct vgltf_renderer *renderer) {
+  vkDeviceWaitIdle(renderer->device);
+  vgltf_renderer_cleanup_swapchain(renderer);
+
+  // TODO add error handling
+  vgltf_renderer_create_swapchain(renderer);
+  vgltf_renderer_create_image_views(renderer);
+  vgltf_renderer_create_framebuffers(renderer);
+  return true;
+}
+
 bool vgltf_renderer_triangle_pass(struct vgltf_renderer *renderer) {
   vkWaitForFences(renderer->device, 1,
                   &renderer->in_flight_fences[renderer->current_frame], VK_TRUE,
                   UINT64_MAX);
-  vkResetFences(renderer->device, 1,
-                &renderer->in_flight_fences[renderer->current_frame]);
 
   uint32_t image_index;
-  vkAcquireNextImageKHR(
+  VkResult acquire_swapchain_image_result = vkAcquireNextImageKHR(
       renderer->device, renderer->swapchain, UINT64_MAX,
       renderer->image_available_semaphores[renderer->current_frame],
       VK_NULL_HANDLE, &image_index);
+  if (acquire_swapchain_image_result == VK_ERROR_OUT_OF_DATE_KHR ||
+      acquire_swapchain_image_result == VK_SUBOPTIMAL_KHR ||
+      renderer->framebuffer_resized) {
+    renderer->framebuffer_resized = false;
+    vgltf_renderer_recreate_swapchain(renderer);
+    return true;
+  } else if (acquire_swapchain_image_result != VK_SUCCESS) {
+    VGLTF_LOG_ERR("Failed to acquire a swapchain image");
+    goto err;
+  }
+
+  vkResetFences(renderer->device, 1,
+                &renderer->in_flight_fences[renderer->current_frame]);
 
   vkResetCommandBuffer(renderer->command_buffer[renderer->current_frame], 0);
   VkCommandBufferBeginInfo begin_info = {
@@ -1277,7 +1316,15 @@ bool vgltf_renderer_triangle_pass(struct vgltf_renderer *renderer) {
   present_info.swapchainCount = 1;
   present_info.pSwapchains = swapchains;
   present_info.pImageIndices = &image_index;
-  vkQueuePresentKHR(renderer->present_queue, &present_info);
+  VkResult result = vkQueuePresentKHR(renderer->present_queue, &present_info);
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    vgltf_renderer_recreate_swapchain(renderer);
+  } else if (acquire_swapchain_image_result != VK_SUCCESS) {
+    VGLTF_LOG_ERR("Failed to acquire a swapchain image");
+    goto err;
+  }
+  renderer->current_frame =
+      (renderer->current_frame + 1) % VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT;
   return true;
 err:
   return false;
@@ -1308,9 +1355,9 @@ bool vgltf_renderer_init(struct vgltf_renderer *renderer,
     VGLTF_LOG_ERR("Couldn't get window size");
     goto destroy_device;
   }
+  renderer->window_size = window_size;
 
-  if (!vgltf_renderer_create_swapchain(renderer, window_size.width,
-                                       window_size.height)) {
+  if (!vgltf_renderer_create_swapchain(renderer)) {
     VGLTF_LOG_ERR("Couldn't create swapchain");
     goto destroy_device;
   }
@@ -1392,6 +1439,10 @@ err:
 }
 void vgltf_renderer_deinit(struct vgltf_renderer *renderer) {
   vkDeviceWaitIdle(renderer->device);
+  vgltf_renderer_cleanup_swapchain(renderer);
+  vkDestroyPipeline(renderer->device, renderer->graphics_pipeline, nullptr);
+  vkDestroyPipelineLayout(renderer->device, renderer->pipeline_layout, nullptr);
+  vkDestroyRenderPass(renderer->device, renderer->render_pass, nullptr);
   for (int i = 0; i < VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT; i++) {
     vkDestroySemaphore(renderer->device,
                        renderer->image_available_semaphores[i], nullptr);
@@ -1400,29 +1451,20 @@ void vgltf_renderer_deinit(struct vgltf_renderer *renderer) {
     vkDestroyFence(renderer->device, renderer->in_flight_fences[i], nullptr);
   }
   vkDestroyCommandPool(renderer->device, renderer->command_pool, nullptr);
-  for (uint32_t swapchain_framebuffer_index = 0;
-       swapchain_framebuffer_index < renderer->swapchain_image_count;
-       swapchain_framebuffer_index++) {
-    vkDestroyFramebuffer(
-        renderer->device,
-        renderer->swapchain_framebuffers[swapchain_framebuffer_index], nullptr);
-  }
-  vkDestroyPipeline(renderer->device, renderer->graphics_pipeline, nullptr);
-  vkDestroyPipelineLayout(renderer->device, renderer->pipeline_layout, nullptr);
-  vkDestroyRenderPass(renderer->device, renderer->render_pass, nullptr);
-  for (uint32_t swapchain_image_view_index = 0;
-       swapchain_image_view_index < renderer->swapchain_image_count;
-       swapchain_image_view_index++) {
-    vkDestroyImageView(
-        renderer->device,
-        renderer->swapchain_image_views[swapchain_image_view_index], nullptr);
-  }
-  vkDestroySwapchainKHR(renderer->device, renderer->swapchain, nullptr);
   vkDestroyDevice(renderer->device, nullptr);
-  vkDestroySurfaceKHR(renderer->instance, renderer->surface, nullptr);
   if (enable_validation_layers) {
     destroy_debug_utils_messenger_ext(renderer->instance,
                                       renderer->debug_messenger, nullptr);
   }
+  vkDestroySurfaceKHR(renderer->instance, renderer->surface, nullptr);
   vkDestroyInstance(renderer->instance, nullptr);
+}
+void vgltf_renderer_on_window_resized(struct vgltf_renderer *renderer,
+                                      struct vgltf_window_size size) {
+  if (size.width > 0 && size.height > 0 &&
+      size.width != renderer->window_size.width &&
+      size.height != renderer->window_size.height) {
+    renderer->window_size = size;
+    renderer->framebuffer_resized = true;
+  }
 }

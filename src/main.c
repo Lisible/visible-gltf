@@ -22,12 +22,15 @@ int main(void) {
           (event.type == VGLTF_EVENT_KEY_DOWN &&
            event.key.key == VGLTF_KEY_ESCAPE)) {
         goto out_main_loop;
+      } else if (event.type == VGLTF_EVENT_WINDOW_RESIZED) {
+        vgltf_renderer_on_window_resized(
+            &renderer,
+            (struct vgltf_window_size){.width = event.window_resized.width,
+                                       .height = event.window_resized.height});
       }
     }
 
     vgltf_renderer_triangle_pass(&renderer);
-    renderer.current_frame =
-        (renderer.current_frame + 1) % VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT;
   }
 out_main_loop:
   vgltf_renderer_deinit(&renderer);

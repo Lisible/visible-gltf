@@ -32,10 +32,14 @@ struct vgltf_renderer {
   VkSemaphore
       render_finished_semaphores[VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT];
   VkFence in_flight_fences[VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT];
+  struct vgltf_window_size window_size;
   uint32_t current_frame;
+  bool framebuffer_resized;
 };
 bool vgltf_renderer_init(struct vgltf_renderer *renderer,
                          struct vgltf_platform *platform);
 void vgltf_renderer_deinit(struct vgltf_renderer *renderer);
 bool vgltf_renderer_triangle_pass(struct vgltf_renderer *renderer);
+void vgltf_renderer_on_window_resized(struct vgltf_renderer *renderer,
+                                      struct vgltf_window_size size);
 #endif // VGLTF_RENDERER_H

@@ -12,8 +12,9 @@ bool vgltf_platform_init(struct vgltf_platform *platform) {
   constexpr char WINDOW_TITLE[] = "VisibleGLTF";
   constexpr int WINDOW_WIDTH = 800;
   constexpr int WINDOW_HEIGHT = 600;
-  SDL_Window *window = SDL_CreateWindow(WINDOW_TITLE, WINDOW_WIDTH,
-                                        WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
+  SDL_Window *window =
+      SDL_CreateWindow(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT,
+                       SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
   if (!window) {
     VGLTF_LOG_ERR("SDL window creation failed: %s", SDL_GetError());
     goto quit_sdl;
@@ -104,6 +105,11 @@ bool vgltf_platform_poll_event(struct vgltf_platform *platform,
     case SDL_EVENT_KEY_DOWN:
       event->type = VGLTF_EVENT_KEY_DOWN;
       event->key.key = vgltf_key_from_sdl_keycode(sdl_event.key.key);
+      break;
+    case SDL_EVENT_WINDOW_RESIZED:
+      event->type = VGLTF_EVENT_WINDOW_RESIZED;
+      event->window_resized.width = sdl_event.display.data1;
+      event->window_resized.height = sdl_event.display.data2;
       break;
     default:
       event->type = VGLTF_EVENT_UNKNOWN;

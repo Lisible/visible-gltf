@@ -14,6 +14,7 @@
 enum vgltf_event_type {
   VGLTF_EVENT_QUIT,
   VGLTF_EVENT_KEY_DOWN,
+  VGLTF_EVENT_WINDOW_RESIZED,
   VGLTF_EVENT_UNKNOWN,
 };
 
@@ -52,10 +53,16 @@ struct vgltf_key_event {
   enum vgltf_key key;
 };
 
+struct vgltf_window_resized_event {
+  int32_t width;
+  int32_t height;
+};
+
 struct vgltf_event {
   enum vgltf_event_type type;
   union {
     struct vgltf_key_event key;
+    struct vgltf_window_resized_event window_resized;
   };
 };
 
