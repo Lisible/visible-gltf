@@ -24,9 +24,12 @@ int main(void) {
         goto out_main_loop;
       }
     }
+
+    vgltf_renderer_triangle_pass(&renderer);
+    renderer.current_frame =
+        (renderer.current_frame + 1) % VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT;
   }
 out_main_loop:
-
   vgltf_renderer_deinit(&renderer);
   vgltf_platform_deinit(&platform);
   return 0;

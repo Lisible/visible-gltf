@@ -894,13 +894,24 @@ static bool vgltf_renderer_create_render_pass(struct vgltf_renderer *renderer) {
   };
   VkSubpassDescription subpass = {.pipelineBindPoint =
                                       VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                  .pColorAttachments = &color_attachment_ref};
+                                  .pColorAttachments = &color_attachment_ref,
+                                  .colorAttachmentCount = 1};
+  VkSubpassDependency dependency = {
+      .srcSubpass = VK_SUBPASS_EXTERNAL,
+      .dstSubpass = 0,
+      .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .srcAccessMask = 0,
+      .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+
   VkRenderPassCreateInfo render_pass_info = {
       .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
       .attachmentCount = 1,
       .pAttachments = &color_attachment,
       .subpassCount = 1,
-      .pSubpasses = &subpass};
+      .pSubpasses = &subpass,
+      .dependencyCount = 1,
+      .pDependencies = &dependency};
 
   if (vkCreateRenderPass(renderer->device, &render_pass_info, nullptr,
                          &renderer->render_pass) != VK_SUCCESS) {
@@ -1112,11 +1123,11 @@ vgltf_renderer_create_command_buffer(struct vgltf_renderer *renderer) {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
       .commandPool = renderer->command_pool,
       .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-      .commandBufferCount = 1};
+      .commandBufferCount = VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT};
 
   if (vkAllocateCommandBuffers(renderer->device, &allocate_info,
-                               &renderer->command_buffer) != VK_SUCCESS) {
-    VGLTF_LOG_ERR("Couldn't allocate command buffer");
+                               renderer->command_buffer) != VK_SUCCESS) {
+    VGLTF_LOG_ERR("Couldn't allocate command buffers");
     goto err;
   }
 
@@ -1125,11 +1136,155 @@ err:
   return false;
 }
 
-static bool vgltf_renderer_record_command_buffer
+static bool
+vgltf_renderer_create_sync_objects(struct vgltf_renderer *renderer) {
+  VkSemaphoreCreateInfo semaphore_info = {
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+  };
 
-    bool
-    vgltf_renderer_init(struct vgltf_renderer *renderer,
-                        struct vgltf_platform *platform) {
+  VkFenceCreateInfo fence_info = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                                  .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+
+  int frame_in_flight_index = 0;
+  for (; frame_in_flight_index < VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT;
+       frame_in_flight_index++) {
+    if (vkCreateSemaphore(
+            renderer->device, &semaphore_info, nullptr,
+            &renderer->image_available_semaphores[frame_in_flight_index]) !=
+            VK_SUCCESS ||
+        vkCreateSemaphore(
+            renderer->device, &semaphore_info, nullptr,
+            &renderer->render_finished_semaphores[frame_in_flight_index]) !=
+            VK_SUCCESS ||
+        vkCreateFence(renderer->device, &fence_info, nullptr,
+                      &renderer->in_flight_fences[frame_in_flight_index]) !=
+            VK_SUCCESS) {
+      VGLTF_LOG_ERR("Couldn't create sync objects");
+      goto err;
+    }
+  }
+
+  return true;
+err:
+  for (int frame_in_flight_to_delete_index = 0;
+       frame_in_flight_to_delete_index < frame_in_flight_index;
+       frame_in_flight_to_delete_index++) {
+    vkDestroyFence(renderer->device,
+                   renderer->in_flight_fences[frame_in_flight_index], nullptr);
+    vkDestroySemaphore(
+        renderer->device,
+        renderer->render_finished_semaphores[frame_in_flight_index], nullptr);
+    vkDestroySemaphore(
+        renderer->device,
+        renderer->image_available_semaphores[frame_in_flight_index], nullptr);
+  }
+  return false;
+}
+
+bool vgltf_renderer_triangle_pass(struct vgltf_renderer *renderer) {
+  vkWaitForFences(renderer->device, 1,
+                  &renderer->in_flight_fences[renderer->current_frame], VK_TRUE,
+                  UINT64_MAX);
+  vkResetFences(renderer->device, 1,
+                &renderer->in_flight_fences[renderer->current_frame]);
+
+  uint32_t image_index;
+  vkAcquireNextImageKHR(
+      renderer->device, renderer->swapchain, UINT64_MAX,
+      renderer->image_available_semaphores[renderer->current_frame],
+      VK_NULL_HANDLE, &image_index);
+
+  vkResetCommandBuffer(renderer->command_buffer[renderer->current_frame], 0);
+  VkCommandBufferBeginInfo begin_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+  };
+
+  if (vkBeginCommandBuffer(renderer->command_buffer[renderer->current_frame],
+                           &begin_info) != VK_SUCCESS) {
+    VGLTF_LOG_ERR("Failed to begin recording command buffer");
+    goto err;
+  }
+
+  VkRenderPassBeginInfo render_pass_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .renderPass = renderer->render_pass,
+      .framebuffer = renderer->swapchain_framebuffers[image_index],
+      .renderArea = {.offset = {}, .extent = renderer->swapchain_extent},
+      .clearValueCount = 1,
+      .pClearValues =
+          &(const VkClearValue){.color = {.float32 = {0.f, 0.f, 0.f, 1.f}}},
+
+  };
+
+  vkCmdBeginRenderPass(renderer->command_buffer[renderer->current_frame],
+                       &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBindPipeline(renderer->command_buffer[renderer->current_frame],
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    renderer->graphics_pipeline);
+  VkViewport viewport = {.x = 0.f,
+                         .y = 0.f,
+                         .width = (float)renderer->swapchain_extent.width,
+                         .height = (float)renderer->swapchain_extent.height,
+                         .minDepth = 0.f,
+                         .maxDepth = 1.f};
+  vkCmdSetViewport(renderer->command_buffer[renderer->current_frame], 0, 1,
+                   &viewport);
+  VkRect2D scissor = {.offset = {}, .extent = renderer->swapchain_extent};
+  vkCmdSetScissor(renderer->command_buffer[renderer->current_frame], 0, 1,
+                  &scissor);
+
+  vkCmdDraw(renderer->command_buffer[renderer->current_frame], 3, 1, 0, 0);
+
+  vkCmdEndRenderPass(renderer->command_buffer[renderer->current_frame]);
+
+  if (vkEndCommandBuffer(renderer->command_buffer[renderer->current_frame]) !=
+      VK_SUCCESS) {
+    VGLTF_LOG_ERR("Failed to record command buffer");
+    goto err;
+  }
+
+  VkSubmitInfo submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+  };
+
+  VkSemaphore wait_semaphores[] = {
+      renderer->image_available_semaphores[renderer->current_frame]};
+  VkPipelineStageFlags wait_stages[] = {
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+  submit_info.waitSemaphoreCount = 1;
+  submit_info.pWaitSemaphores = wait_semaphores;
+  submit_info.pWaitDstStageMask = wait_stages;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers =
+      &renderer->command_buffer[renderer->current_frame];
+
+  VkSemaphore signal_semaphores[] = {
+      renderer->render_finished_semaphores[renderer->current_frame]};
+  submit_info.signalSemaphoreCount = 1;
+  submit_info.pSignalSemaphores = signal_semaphores;
+  if (vkQueueSubmit(renderer->graphics_queue, 1, &submit_info,
+                    renderer->in_flight_fences[renderer->current_frame]) !=
+      VK_SUCCESS) {
+    VGLTF_LOG_ERR("Failed to submit draw command buffer");
+    goto err;
+  }
+
+  VkPresentInfoKHR present_info = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                                   .waitSemaphoreCount = 1,
+                                   .pWaitSemaphores = signal_semaphores};
+
+  VkSwapchainKHR swapchains[] = {renderer->swapchain};
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = swapchains;
+  present_info.pImageIndices = &image_index;
+  vkQueuePresentKHR(renderer->present_queue, &present_info);
+  return true;
+err:
+  return false;
+}
+
+bool vgltf_renderer_init(struct vgltf_renderer *renderer,
+                         struct vgltf_platform *platform) {
   if (!vgltf_renderer_create_instance(renderer, platform)) {
     VGLTF_LOG_ERR("instance creation failed");
     goto err;
@@ -1190,6 +1345,11 @@ static bool vgltf_renderer_record_command_buffer
     goto destroy_command_pool;
   }
 
+  if (!vgltf_renderer_create_sync_objects(renderer)) {
+    VGLTF_LOG_ERR("Couldn't create sync objects");
+    goto destroy_command_pool;
+  }
+
   return true;
 
 destroy_command_pool:
@@ -1231,6 +1391,14 @@ err:
   return false;
 }
 void vgltf_renderer_deinit(struct vgltf_renderer *renderer) {
+  vkDeviceWaitIdle(renderer->device);
+  for (int i = 0; i < VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT; i++) {
+    vkDestroySemaphore(renderer->device,
+                       renderer->image_available_semaphores[i], nullptr);
+    vkDestroySemaphore(renderer->device,
+                       renderer->render_finished_semaphores[i], nullptr);
+    vkDestroyFence(renderer->device, renderer->in_flight_fences[i], nullptr);
+  }
   vkDestroyCommandPool(renderer->device, renderer->command_pool, nullptr);
   for (uint32_t swapchain_framebuffer_index = 0;
        swapchain_framebuffer_index < renderer->swapchain_image_count;
