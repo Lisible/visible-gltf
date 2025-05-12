@@ -1110,11 +1110,11 @@ err:
 
 static bool
 vgltf_renderer_create_graphics_pipeline(struct vgltf_renderer *renderer) {
-  static constexpr unsigned char triangle_shader_vert_code[] = {
-#embed "../compiled_shaders/triangle.vert.spv"
+  static unsigned char triangle_shader_vert_code[] = {
+#embed "../../compiled_shaders/triangle.vert.spv"
   };
-  static constexpr unsigned char triangle_shader_frag_code[] = {
-#embed "../compiled_shaders/triangle.frag.spv"
+  static unsigned char triangle_shader_frag_code[] = {
+#embed "../../compiled_shaders/triangle.frag.spv"
   };
 
   VkShaderModule triangle_shader_vert_module;
@@ -2042,14 +2042,14 @@ static void vgltf_renderer_triangle_pass(struct vgltf_renderer *renderer,
 
 static void update_uniform_buffer(struct vgltf_renderer *renderer,
                                   uint32_t current_frame) {
-  static long long start_time_nanoseconds = 0;
+  static long start_time_nanoseconds = 0;
   if (start_time_nanoseconds == 0) {
     if (!vgltf_platform_get_current_time_nanoseconds(&start_time_nanoseconds)) {
       VGLTF_LOG_ERR("Couldn't get current time");
     }
   }
 
-  long long current_time_nanoseconds = 0;
+  long current_time_nanoseconds = 0;
   if (!vgltf_platform_get_current_time_nanoseconds(&current_time_nanoseconds)) {
     VGLTF_LOG_ERR("Couldn't get current time");
   }
