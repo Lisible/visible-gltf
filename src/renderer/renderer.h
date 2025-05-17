@@ -1,16 +1,12 @@
 #ifndef VGLTF_RENDERER_H
 #define VGLTF_RENDERER_H
 
+#include "../graphics.h"
 #include "../maths.h"
 #include "../platform.h"
 #include "vma_usage.h"
 #include <vulkan/vulkan.h>
 
-struct vgltf_vertex {
-  vgltf_vec3 position;
-  vgltf_vec3 color;
-  vgltf_vec2 texture_coordinates;
-};
 VkVertexInputBindingDescription vgltf_vertex_binding_description(void);
 
 struct vgltf_vertex_input_attribute_descriptions {
@@ -70,6 +66,10 @@ struct vgltf_vk_pipeline {
 };
 
 constexpr int VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT = 2;
+constexpr int VGLTF_RENDERER_VERTEX_BUFFER_CAPACITY = 300000;
+constexpr int VGLTF_RENDERER_VERTEX_STAGING_BUFFER_CAPACITY = 1024;
+constexpr int VGLTF_RENDERER_INDEX_BUFFER_CAPACITY = 300000;
+constexpr int VGLTF_RENDERER_INDEX_STAGING_BUFFER_CAPACITY = 1024;
 struct vgltf_renderer {
   struct vgltf_vk_instance instance;
   struct vgltf_vk_device device;
@@ -87,7 +87,8 @@ struct vgltf_renderer {
   VkPipelineLayout pipeline_layout;
   VkPipeline graphics_pipeline;
 
-  VkFramebuffer swapchain_framebuffers[VGLTF_RENDERER_MAX_SWAPCHAIN_IMAGE_COUNT];
+  VkFramebuffer
+      swapchain_framebuffers[VGLTF_RENDERER_MAX_SWAPCHAIN_IMAGE_COUNT];
 
   VkCommandPool command_pool;
   VkCommandBuffer command_buffer[VGLTF_RENDERER_MAX_FRAME_IN_FLIGHT_COUNT];
@@ -105,22 +106,24 @@ struct vgltf_renderer {
   struct vgltf_renderer_allocated_image texture_image;
   VkImageView texture_image_view;
   VkSampler texture_sampler;
-  struct vgltf_vertex vertices[100000];
-  int vertex_count;
-  uint16_t indices[100000];
-  int index_count;
   struct vgltf_renderer_allocated_buffer vertex_buffer;
+  struct vgltf_renderer_allocated_buffer vertex_staging_buffer;
+  int vertex_count;
   struct vgltf_renderer_allocated_buffer index_buffer;
+  struct vgltf_renderer_allocated_buffer index_staging_buffer;
+  int index_count;
 
   struct vgltf_window_size window_size;
   uint32_t current_frame;
   bool framebuffer_resized;
 };
 bool vgltf_renderer_init(struct vgltf_renderer *renderer,
-                       struct vgltf_platform *platform);
+                         struct vgltf_platform *platform);
 void vgltf_renderer_deinit(struct vgltf_renderer *renderer);
+void vgltf_renderer_upload_mesh(struct vgltf_renderer *renderer,
+                                const struct vgltf_mesh *mesh);
 bool vgltf_renderer_render_frame(struct vgltf_renderer *renderer);
 void vgltf_renderer_on_window_resized(struct vgltf_renderer *renderer,
-                                    struct vgltf_window_size size);
+                                      struct vgltf_window_size size);
 
 #endif // VGLTF_RENDERER_H

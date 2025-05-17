@@ -7,7 +7,9 @@ struct vgltf_engine {
   struct vgltf_renderer renderer;
 };
 
-bool vgltf_engine_init(struct vgltf_engine *engine, struct vgltf_platform *platform);
+bool vgltf_engine_init(struct vgltf_engine *engine,
+                       struct vgltf_platform *platform,
+                       struct vgltf_string_view model_path);
 void vgltf_engine_deinit(struct vgltf_engine *engine);
 void vgltf_engine_run_frame(struct vgltf_engine *engine);
 
