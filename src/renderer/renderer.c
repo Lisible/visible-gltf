@@ -1,8 +1,8 @@
-#include "renderer.h"
 #include "../image.h"
 #include "../log.h"
 #include "../maths.h"
 #include "../platform.h"
+#include "renderer.h"
 #include "vma_usage.h"
 #include <math.h>
 
@@ -12,7 +12,6 @@
 #include <assert.h>
 #include <vulkan/vulkan_core.h>
 
-static const char MODEL_PATH[] = "assets/model.obj";
 static const char TEXTURE_PATH[] = "assets/texture.png";
 
 VkVertexInputBindingDescription vgltf_vertex_binding_description() {
@@ -1708,156 +1707,37 @@ err:
   return false;
 }
 
-static void get_file_data(void *ctx, const char *filename, const int is_mtl,
-                          const char *obj_filename, char **data, size_t *len) {
-  (void)ctx;
-  (void)is_mtl;
-
-  if (!filename) {
-    VGLTF_LOG_ERR("Null filename");
-    *data = NULL;
-    *len = 0;
-    return;
-  }
-  *data = vgltf_platform_read_file_to_string(obj_filename, len);
-}
-
-static bool load_model(struct vgltf_renderer *renderer) {
-  tinyobj_attrib_t attrib;
-  tinyobj_shape_t *shapes = nullptr;
-  size_t shape_count;
-  tinyobj_material_t *materials = nullptr;
-  size_t material_count;
-
-  if ((tinyobj_parse_obj(&attrib, &shapes, &shape_count, &materials,
-                         &material_count, MODEL_PATH, get_file_data, nullptr,
-                         TINYOBJ_FLAG_TRIANGULATE)) != TINYOBJ_SUCCESS) {
-    VGLTF_LOG_ERR("Couldn't load obj");
-    return false;
-  }
-
-  for (size_t shape_index = 0; shape_index < shape_count; shape_index++) {
-    tinyobj_shape_t *shape = &shapes[shape_index];
-    unsigned int face_offset = shape->face_offset;
-    for (size_t face_index = face_offset;
-         face_index < face_offset + shape->length; face_index++) {
-      float v[3][3];
-      float t[3][2];
-
-      tinyobj_vertex_index_t idx0 = attrib.faces[face_index * 3 + 0];
-      tinyobj_vertex_index_t idx1 = attrib.faces[face_index * 3 + 1];
-      tinyobj_vertex_index_t idx2 = attrib.faces[face_index * 3 + 2];
-
-      for (int k = 0; k < 3; k++) {
-        int f0 = idx0.v_idx;
-        int f1 = idx1.v_idx;
-        int f2 = idx2.v_idx;
-
-        v[0][k] = attrib.vertices[3 * (size_t)f0 + k];
-        v[1][k] = attrib.vertices[3 * (size_t)f1 + k];
-        v[2][k] = attrib.vertices[3 * (size_t)f2 + k];
-      }
-
-      for (int k = 0; k < 2; k++) {
-        int t0 = idx0.vt_idx;
-        int t1 = idx1.vt_idx;
-        int t2 = idx2.vt_idx;
-
-        t[0][k] = attrib.texcoords[2 * (size_t)t0 + k];
-        t[1][k] = attrib.texcoords[2 * (size_t)t1 + k];
-        t[2][k] = attrib.texcoords[2 * (size_t)t2 + k];
-      }
-
-      for (int k = 0; k < 3; k++) {
-        renderer->vertices[renderer->vertex_count++] = (struct vgltf_vertex){
-            .position = {v[k][0], v[k][1], v[k][2]},
-            .texture_coordinates = {t[k][0], 1.f - t[k][1]},
-            .color = {1.f, 1.f, 1.f}};
-        renderer->indices[renderer->index_count++] = renderer->index_count;
-      }
-    }
-    tinyobj_attrib_free(&attrib);
-    tinyobj_shapes_free(shapes, shape_count);
-    tinyobj_materials_free(materials, material_count);
-  }
-  return true;
-}
-
 static bool
 vgltf_renderer_create_vertex_buffer(struct vgltf_renderer *renderer) {
   VkDeviceSize buffer_size =
-      renderer->vertex_count * sizeof(struct vgltf_vertex);
-
-  struct vgltf_renderer_allocated_buffer staging_buffer = {};
-  if (!vgltf_renderer_create_buffer(renderer, buffer_size,
-                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                    &staging_buffer)) {
-    VGLTF_LOG_ERR("Failed to create transfer buffer");
-    goto err;
-  }
-
-  void *data;
-  vmaMapMemory(renderer->device.allocator, staging_buffer.allocation, &data);
-  memcpy(data, renderer->vertices,
-         renderer->vertex_count * sizeof(struct vgltf_vertex));
-  vmaUnmapMemory(renderer->device.allocator, staging_buffer.allocation);
+      VGLTF_RENDERER_VERTEX_BUFFER_CAPACITY * sizeof(struct vgltf_vertex);
 
   if (!vgltf_renderer_create_buffer(
           renderer, buffer_size,
           VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->vertex_buffer)) {
     VGLTF_LOG_ERR("Failed to create vertex buffer");
-    goto destroy_staging_buffer;
+    goto err;
   }
 
-  vgltf_renderer_copy_buffer(renderer, staging_buffer.buffer,
-                             renderer->vertex_buffer.buffer, buffer_size);
-  vmaDestroyBuffer(renderer->device.allocator, staging_buffer.buffer,
-                   staging_buffer.allocation);
   return true;
-destroy_staging_buffer:
-  vmaDestroyBuffer(renderer->device.allocator, staging_buffer.buffer,
-                   staging_buffer.allocation);
 err:
   return false;
 }
 
 static bool
 vgltf_renderer_create_index_buffer(struct vgltf_renderer *renderer) {
-  VkDeviceSize buffer_size = renderer->index_count * sizeof(uint16_t);
-  struct vgltf_renderer_allocated_buffer staging_buffer = {};
-  if (!vgltf_renderer_create_buffer(renderer, buffer_size,
-                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                    &staging_buffer)) {
-    VGLTF_LOG_ERR("Failed to create transfer buffer");
-    goto err;
-  }
-
-  void *data;
-  vmaMapMemory(renderer->device.allocator, staging_buffer.allocation, &data);
-  memcpy(data, renderer->indices, renderer->index_count * sizeof(uint16_t));
-  vmaUnmapMemory(renderer->device.allocator, staging_buffer.allocation);
+  VkDeviceSize buffer_size =
+      VGLTF_RENDERER_INDEX_BUFFER_CAPACITY * sizeof(uint16_t);
 
   if (!vgltf_renderer_create_buffer(
           renderer, buffer_size,
           VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->index_buffer)) {
     VGLTF_LOG_ERR("Failed to create index buffer");
-    goto destroy_staging_buffer;
+    goto err;
   }
-  vgltf_renderer_copy_buffer(renderer, staging_buffer.buffer,
-                             renderer->index_buffer.buffer, buffer_size);
-  vmaDestroyBuffer(renderer->device.allocator, staging_buffer.buffer,
-                   staging_buffer.allocation);
   return true;
-
-destroy_staging_buffer:
-  vmaDestroyBuffer(renderer->device.allocator, staging_buffer.buffer,
-                   staging_buffer.allocation);
 err:
   return false;
 }
@@ -2057,7 +1937,6 @@ static void update_uniform_buffer(struct vgltf_renderer *renderer,
   long elapsed_time_nanoseconds =
       current_time_nanoseconds - start_time_nanoseconds;
   float elapsed_time_seconds = elapsed_time_nanoseconds / 1e9f;
-  VGLTF_LOG_INFO("Elapsed time: %f", elapsed_time_seconds);
 
   vgltf_mat4 model_matrix;
   vgltf_mat4_rotate(model_matrix, (vgltf_mat4)VGLTF_MAT4_IDENTITY,
@@ -2394,14 +2273,9 @@ bool vgltf_renderer_init(struct vgltf_renderer *renderer,
     goto destroy_texture_image_view;
   }
 
-  if (!load_model(renderer)) {
-    VGLTF_LOG_ERR("Couldn't load model");
-    goto destroy_texture_sampler;
-  }
-
   if (!vgltf_renderer_create_vertex_buffer(renderer)) {
     VGLTF_LOG_ERR("Couldn't create vertex buffer");
-    goto destroy_model;
+    goto destroy_texture_sampler;
   }
 
   if (!vgltf_renderer_create_index_buffer(renderer)) {
@@ -2451,8 +2325,6 @@ destroy_index_buffer:
 destroy_vertex_buffer:
   vmaDestroyBuffer(renderer->device.allocator, renderer->vertex_buffer.buffer,
                    renderer->vertex_buffer.allocation);
-destroy_model:
-  // TODO
 destroy_texture_sampler:
   vkDestroySampler(renderer->device.device, renderer->texture_sampler, nullptr);
 destroy_texture_image_view:
@@ -2548,6 +2420,8 @@ void vgltf_renderer_deinit(struct vgltf_renderer *renderer) {
   }
   vgltf_vk_instance_deinit(&renderer->instance);
 }
+void vgltf_renderer_upload_mesh(struct vgltf_renderer *renderer,
+                                const struct vgltf_mesh *mesh) {}
 void vgltf_renderer_on_window_resized(struct vgltf_renderer *renderer,
                                       struct vgltf_window_size size) {
   if (size.width > 0 && size.height > 0 &&

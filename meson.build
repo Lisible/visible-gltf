@@ -45,9 +45,10 @@ vgltf_srcs = [
   'src/platform.c',
   'src/platform_sdl.c',
   'src/image.c',
+  'src/engine.c',
+  'src/graphics.c',
   'src/renderer/renderer.c',
   'src/renderer/vma_usage.cpp',
-  'src/engine.c',
 ]
 
 vgltf_exe = executable(
