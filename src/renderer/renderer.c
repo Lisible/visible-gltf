@@ -1979,11 +1979,11 @@ static void update_uniform_buffer(struct vgltf_renderer *renderer,
   vgltf_mat4 model_matrix;
   vgltf_mat4_rotate(model_matrix, (vgltf_mat4)VGLTF_MAT4_IDENTITY,
                     elapsed_time_seconds * VGLTF_MATHS_DEG_TO_RAD(90.0f),
-                    (vgltf_vec3){0.f, 0.f, 1.f});
+                    (vgltf_vec3){0.f, 1.f, 0.f});
 
   vgltf_mat4 view_matrix;
-  vgltf_mat4_look_at(view_matrix, (vgltf_vec3){10.f, 10.f, 10.f},
-                     (vgltf_vec3){0.f, 0.f, 0.f}, (vgltf_vec3){0.f, 0.f, 1.f});
+  vgltf_mat4_look_at(view_matrix, (vgltf_vec3){300.f, 300.f, 300.f},
+                     (vgltf_vec3){0.f, 0.f, 0.f}, (vgltf_vec3){0.f, 1.f, 0.f});
   // vgltf_mat4_look_at(view_matrix, (vgltf_vec3){5.f, 5.f, 5.f},
   //                    (vgltf_vec3){0.f, 0.f, 0.f}, (vgltf_vec3){0.f,
   //                    0.f, 1.f});
@@ -1992,7 +1992,7 @@ static void update_uniform_buffer(struct vgltf_renderer *renderer,
   vgltf_mat4_perspective(projection_matrix, VGLTF_MATHS_DEG_TO_RAD(45.f),
                          (float)renderer->swapchain.swapchain_extent.width /
                              (float)renderer->swapchain.swapchain_extent.height,
-                         0.1f, 100.f);
+                         0.1f, 1000.f);
   projection_matrix[1 * 4 + 1] *= -1;
 
   struct vgltf_renderer_uniform_buffer_object ubo = {};

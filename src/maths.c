@@ -3,12 +3,13 @@
 #include <string.h>
 
 vgltf_vec3 vgltf_vec3_sub(vgltf_vec3 lhs, vgltf_vec3 rhs) {
-  return (vgltf_vec3){.x = lhs.x - rhs.x, .y = lhs.y - rhs.y, .z = lhs.z - rhs.z};
+  return (vgltf_vec3){
+      .x = lhs.x - rhs.x, .y = lhs.y - rhs.y, .z = lhs.z - rhs.z};
 }
 vgltf_vec3 vgltf_vec3_cross(vgltf_vec3 lhs, vgltf_vec3 rhs) {
   return (vgltf_vec3){.x = lhs.y * rhs.z - lhs.z * rhs.y,
-                    .y = lhs.z * rhs.x - lhs.x * rhs.z,
-                    .z = lhs.x * rhs.y - lhs.y * rhs.x};
+                      .y = lhs.z * rhs.x - lhs.x * rhs.z,
+                      .z = lhs.x * rhs.y - lhs.y * rhs.x};
 }
 vgltf_vec_value_type vgltf_vec3_dot(vgltf_vec3 lhs, vgltf_vec3 rhs) {
   return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
@@ -31,33 +32,33 @@ void vgltf_mat4_multiply(vgltf_mat4 out, vgltf_mat4 lhs, vgltf_mat4 rhs) {
   }
 }
 void vgltf_mat4_rotate(vgltf_mat4 out, vgltf_mat4 matrix,
-                     vgltf_mat_value_type angle_radians, vgltf_vec3 axis) {
+                       vgltf_mat_value_type angle_radians, vgltf_vec3 axis) {
   vgltf_vec3 a = vgltf_vec3_normalized(axis);
   vgltf_vec_value_type c = cosf(angle_radians);
   vgltf_vec_value_type s = sinf(angle_radians);
   vgltf_vec_value_type t = 1.f - c;
 
   vgltf_mat4 rotation_matrix = {t * a.x * a.x + c,
-                              t * a.x * a.y - s * a.z,
-                              t * a.x * a.z + s * a.y,
-                              0.f,
-                              t * a.x * a.y + s * a.z,
-                              t * a.y * a.y + c,
-                              t * a.y * a.z - s * a.x,
-                              0.f,
-                              t * a.x * a.z - s * a.y,
-                              t * a.y * a.z + s * a.x,
-                              t * a.z * a.z + c,
-                              0.f,
-                              0.f,
-                              0.f,
-                              0.f,
-                              1.f};
+                                t * a.x * a.y - s * a.z,
+                                t * a.x * a.z + s * a.y,
+                                0.f,
+                                t * a.x * a.y + s * a.z,
+                                t * a.y * a.y + c,
+                                t * a.y * a.z - s * a.x,
+                                0.f,
+                                t * a.x * a.z - s * a.y,
+                                t * a.y * a.z + s * a.x,
+                                t * a.z * a.z + c,
+                                0.f,
+                                0.f,
+                                0.f,
+                                0.f,
+                                1.f};
 
   vgltf_mat4_multiply(out, matrix, rotation_matrix);
 }
 void vgltf_mat4_look_at(vgltf_mat4 out, vgltf_vec3 eye_position,
-                      vgltf_vec3 target_position, vgltf_vec3 up_axis) {
+                        vgltf_vec3 target_position, vgltf_vec3 up_axis) {
   vgltf_vec3 forward =
       vgltf_vec3_normalized(vgltf_vec3_sub(target_position, eye_position));
   vgltf_vec3 right = vgltf_vec3_normalized(vgltf_vec3_cross(forward, up_axis));
@@ -73,13 +74,14 @@ void vgltf_mat4_look_at(vgltf_mat4 out, vgltf_vec3 eye_position,
   out[0 * 4 + 2] = -forward.x;
   out[1 * 4 + 2] = -forward.y;
   out[2 * 4 + 2] = -forward.z;
-  out[3 * 4 + 0] = -vgltf_vec3_dot(right, eye_position);
-  out[3 * 4 + 1] = -vgltf_vec3_dot(camera_up, eye_position);
+  out[3 * 4 + 0] = vgltf_vec3_dot(right, eye_position);
+  out[3 * 4 + 1] = vgltf_vec3_dot(camera_up, eye_position);
   out[3 * 4 + 2] = vgltf_vec3_dot(forward, eye_position);
 }
 void vgltf_mat4_perspective(vgltf_mat4 out, vgltf_mat_value_type fov_radians,
-                          vgltf_mat_value_type aspect_ratio,
-                          vgltf_mat_value_type near, vgltf_mat_value_type far) {
+                            vgltf_mat_value_type aspect_ratio,
+                            vgltf_mat_value_type near,
+                            vgltf_mat_value_type far) {
   float tan_half_fovy = tanf(fov_radians / 2.0f);
   out[0] = 1.f / (aspect_ratio * tan_half_fovy);
   out[1] = 0.0f;
