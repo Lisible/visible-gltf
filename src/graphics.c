@@ -1,6 +1,8 @@
+#include "alloc.h"
 #include "graphics.h"
+#include "image.h"
 #include "platform.h"
-#include "src/alloc.h"
+#include "str.h"
 #define CGLTF_IMPLEMENTATION
 #include "vendor/cgltf.h"
 
@@ -25,6 +27,19 @@ find_cgltf_attribute_in_primitive(struct cgltf_primitive *primitive,
   }
 
   return nullptr;
+}
+
+struct vgltf_string
+vgltf_strip_last_path_component(struct vgltf_allocator *allocator,
+                                struct vgltf_string_view sv) {
+  char *last_slash = strrchr(sv.data, '/');
+  size_t length = last_slash - sv.data + 1;
+
+  char *stripped_path = vgltf_allocator_allocate(allocator, length + 1);
+  memcpy(stripped_path, sv.data, length);
+  stripped_path[length] = '\0';
+
+  return (struct vgltf_string){.data = stripped_path, .length = length};
 }
 
 bool vgltf_mesh_load_from_glb(struct vgltf_allocator *allocator,
@@ -65,6 +80,7 @@ bool vgltf_mesh_load_from_glb(struct vgltf_allocator *allocator,
   VGLTF_LOG_DBG("- Mesh 0: \"%s\"", first_mesh->name);
   VGLTF_LOG_DBG("-- Primitive count: \"%zu\"", first_mesh->primitives_count);
 
+  // GEOMETRY DATA
   if (first_mesh->primitives_count < 1) {
     VGLTF_LOG_ERR("Expects at least one primitive in mesh");
     goto deinit_parsed_glb;
@@ -162,6 +178,37 @@ bool vgltf_mesh_load_from_glb(struct vgltf_allocator *allocator,
 
   VGLTF_LOG_DBG("vertex count: %d", mesh->vertex_count);
   VGLTF_LOG_DBG("index count: %d", mesh->index_count);
+
+  // MATERIAL DATA
+  // FIXME: We are only using the material of the first primitive of the first
+  // mesh
+  const cgltf_float *base_color_factor =
+      first_primitive->material->pbr_metallic_roughness.base_color_factor;
+  const cgltf_texture_view *base_color_texture_view =
+      &first_primitive->material->pbr_metallic_roughness.base_color_texture;
+  const cgltf_image *base_color_cgltf_image =
+      base_color_texture_view->texture->image;
+
+  // TODO: add support for images using buffer views
+  const char *base_color_image_uri = base_color_cgltf_image->uri;
+  struct vgltf_string_view base_color_image_uri_sv = {
+      .data = base_color_image_uri, .length = strlen(base_color_image_uri)};
+
+  struct vgltf_string stripped_path =
+      vgltf_strip_last_path_component(allocator, path);
+  struct vgltf_string base_color_image_path = vgltf_string_concatenate(
+      allocator, vgltf_string_view_from_string(stripped_path),
+      base_color_image_uri_sv);
+  VGLTF_LOG_DBG("base color image path: %s", base_color_image_path.data);
+
+  struct vgltf_image base_color_image = {};
+  if (vgltf_image_load_from_file(
+          &base_color_image,
+          vgltf_string_view_from_string(base_color_image_path))) {
+    VGLTF_LOG_DBG("Image loaded successfully");
+  }
+
+  VGLTF_PANIC();
 
   cgltf_free(parsed_glb);
   SDL_free(glb_file_data);

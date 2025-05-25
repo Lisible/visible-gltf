@@ -2,6 +2,7 @@
 #define VGLTF_GRAPHICS_H
 
 #include "alloc.h"
+#include "image.h"
 #include "maths.h"
 #include "str.h"
 #include <stdint.h>
@@ -19,6 +20,15 @@ struct vgltf_mesh {
   vgltf_vertex_index *indices;
   int vertex_count;
   int index_count;
+};
+
+struct vgltf_texture {
+  struct vgltf_image image;
+};
+
+struct vgltf_model {
+  struct vgltf_mesh mesh;
+  struct vgltf_texture texture;
 };
 bool vgltf_mesh_load_from_glb(struct vgltf_allocator *allocator,
                               struct vgltf_string_view path,
